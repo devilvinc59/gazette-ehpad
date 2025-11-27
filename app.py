@@ -1,532 +1,195 @@
 import streamlit as st
-import anthropic
+import google.generativeai as genai
 from datetime import datetime
 from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
 from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
-# Configuration de la page
-st.set_page_config(
-    page_title="Gazette EHPAD",
-    page_icon="📰",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Gazette EHPAD", page_icon="📰", layout="wide")
 
-# Initialisation de l'état de session
-if 'gazette_data' not in st.session_state:
-    mois_actuel = datetime.now().strftime('%B %Y').capitalize()
-    
-    st.session_state.gazette_data = {
+# Initialisation
+if 'data' not in st.session_state:
+    st.session_state.data = {
         'etablissement': '',
-        'mois': mois_actuel,
-        'edito_prompt': '',
-        'edito_text': '',
-        'cover_photos': [],
-        'activites_prompt': '',
-        'activites_text': '',
-        'activites_photos': [],
-        'planning_prompt': '',
-        'planning_text': '',
-        'news_prompt': '',
-        'news_text': '',
-        'memoire_prompt': '',
-        'memoire_text': '',
-        'memoire_photos': []
+        'mois': datetime.now().strftime('%B %Y'),
+        'edito_prompt': '', 'edito_text': '',
+        'activites_prompt': '', 'activites_text': '',
+        'planning_prompt': '', 'planning_text': '',
+        'news_prompt': '', 'news_text': '',
+        'memoire_prompt': '', 'memoire_text': '',
     }
 
-if 'api_key' not in st.session_state:
-    st.session_state.api_key = ''
-
-def generate_text(prompt: str, context: str, etablissement: str, mois: str) -> str:
-    """Génère du texte via l'API Anthropic."""
-    if not st.session_state.api_key:
-        st.error("Veuillez entrer votre clé API Anthropic dans la barre latérale.")
-        return ""
-    
+def generate_text(prompt, context, etablissement, mois, api_key):
     try:
-        client = anthropic.Anthropic(api_key=st.session_state.api_key)
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1000,
-            messages=[{
-                "role": "user",
-                "content": f"""Tu es rédacteur pour la gazette mensuelle d'un EHPAD ({etablissement or 'notre établissement'}).
+        full_prompt = f"""Tu es redacteur pour la gazette mensuelle d'un EHPAD ({etablissement or 'notre etablissement'}).
 
 Contexte: {context}
 Mois: {mois}
 
 Instructions: {prompt}
 
-Rédige un texte chaleureux et bienveillant:
-- Français simple et accessible
-- Positif et valorisant pour les résidents et le personnel
-- Adapté aux familles et résidents
-- 2-4 paragraphes
+Redige un texte chaleureux et bienveillant en francais simple, positif, de 2-4 paragraphes.
+Reponds uniquement avec le texte, sans introduction."""
 
-Réponds uniquement avec le texte, sans introduction ni commentaire."""
-            }]
-        )
-        
-        return message.content[0].text
-    except anthropic.AuthenticationError:
-        st.error("Clé API invalide. Vérifiez votre clé Anthropic.")
-        return ""
+        response = model.generate_content(full_prompt)
+        return response.text
     except Exception as e:
-        st.error(f"Erreur lors de la génération : {str(e)}")
-        return ""
+        return f"Erreur: {str(e)}"
 
-def create_pdf():
-    """Génère le PDF de la gazette."""
+def create_pdf(data):
     buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=15*mm,
-        leftMargin=15*mm,
-        topMargin=15*mm,
-        bottomMargin=15*mm
-    )
-    
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=15*mm, bottomMargin=15*mm)
     styles = getSampleStyleSheet()
     
-    title_style = ParagraphStyle(
-        'GazetteTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        textColor=HexColor('#2D5A4A'),
-        alignment=TA_CENTER,
-        spaceAfter=5*mm
-    )
-    
-    subtitle_style = ParagraphStyle(
-        'GazetteSubtitle',
-        parent=styles['Normal'],
-        fontSize=14,
-        textColor=HexColor('#C9A962'),
-        alignment=TA_CENTER,
-        spaceAfter=10*mm
-    )
-    
-    section_style = ParagraphStyle(
-        'SectionTitle',
-        parent=styles['Heading2'],
-        fontSize=16,
-        textColor=HexColor('#2D5A4A'),
-        spaceBefore=8*mm,
-        spaceAfter=4*mm
-    )
-    
-    body_style = ParagraphStyle(
-        'BodyText',
-        parent=styles['Normal'],
-        fontSize=11,
-        textColor=HexColor('#2C3E50'),
-        alignment=TA_JUSTIFY,
-        spaceAfter=3*mm,
-        leading=16
-    )
-    
-    memory_style = ParagraphStyle(
-        'MemoryText',
-        parent=body_style,
-        fontName='Helvetica-Oblique'
-    )
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=24, textColor=HexColor('#2D5A4A'), alignment=TA_CENTER, spaceAfter=5*mm)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=14, textColor=HexColor('#C9A962'), alignment=TA_CENTER, spaceAfter=10*mm)
+    section_style = ParagraphStyle('Section', parent=styles['Heading2'], fontSize=16, textColor=HexColor('#2D5A4A'), spaceBefore=8*mm, spaceAfter=4*mm)
+    body_style = ParagraphStyle('Body', parent=styles['Normal'], fontSize=11, textColor=HexColor('#2C3E50'), alignment=TA_JUSTIFY, spaceAfter=3*mm, leading=16)
     
     story = []
-    data = st.session_state.gazette_data
     
-    # Page 1 - Couverture & Éditorial
     story.append(Paragraph(data['etablissement'] or "Notre EHPAD", title_style))
-    story.append(Paragraph(f"La Gazette — {data['mois']}", subtitle_style))
-    story.append(Spacer(1, 5*mm))
-    
-    if data['cover_photos']:
-        for photo in data['cover_photos'][:2]:
-            try:
-                img = Image(BytesIO(photo), width=80*mm, height=50*mm)
-                story.append(img)
-                story.append(Spacer(1, 3*mm))
-            except:
-                pass
-    
-    story.append(Paragraph("Éditorial", section_style))
-    edito = data['edito_text'] or "Votre éditorial apparaîtra ici..."
-    story.append(Paragraph(edito.replace('\n', '<br/>'), body_style))
+    story.append(Paragraph(f"La Gazette - {data['mois']}", subtitle_style))
+    story.append(Paragraph("Editorial", section_style))
+    story.append(Paragraph((data['edito_text'] or "...").replace('\n', '<br/>'), body_style))
     story.append(PageBreak())
     
-    # Page 2 - Activités
-    story.append(Paragraph("Les Activités du Mois", section_style))
-    
-    if data['activites_photos']:
-        for photo in data['activites_photos'][:4]:
-            try:
-                img = Image(BytesIO(photo), width=70*mm, height=45*mm)
-                story.append(img)
-                story.append(Spacer(1, 2*mm))
-            except:
-                pass
-    
-    activites = data['activites_text'] or "Le récapitulatif des activités apparaîtra ici..."
-    story.append(Paragraph(activites.replace('\n', '<br/>'), body_style))
+    story.append(Paragraph("Les Activites du Mois", section_style))
+    story.append(Paragraph((data['activites_text'] or "...").replace('\n', '<br/>'), body_style))
     story.append(PageBreak())
     
-    # Page 3 - Planning & News
     story.append(Paragraph("Planning du Mois", section_style))
-    planning = data['planning_text'] or "Le planning apparaîtra ici..."
-    story.append(Paragraph(planning.replace('\n', '<br/>'), body_style))
+    story.append(Paragraph((data['planning_text'] or "...").replace('\n', '<br/>'), body_style))
     story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("Actualités", section_style))
-    news = data['news_text'] or "Les actualités apparaîtront ici..."
-    story.append(Paragraph(news.replace('\n', '<br/>'), body_style))
+    story.append(Paragraph("Actualites", section_style))
+    story.append(Paragraph((data['news_text'] or "...").replace('\n', '<br/>'), body_style))
     story.append(PageBreak())
     
-    # Page 4 - Chronique Mémoire
-    story.append(Paragraph("Chronique Mémoire", section_style))
-    
-    if data['memoire_photos']:
-        for photo in data['memoire_photos'][:2]:
-            try:
-                img = Image(BytesIO(photo), width=60*mm, height=40*mm)
-                story.append(img)
-                story.append(Spacer(1, 2*mm))
-            except:
-                pass
-    
-    memoire = data['memoire_text'] or "La chronique mémoire apparaîtra ici..."
-    story.append(Paragraph(memoire.replace('\n', '<br/>'), memory_style))
+    story.append(Paragraph("Chronique Memoire", section_style))
+    story.append(Paragraph((data['memoire_text'] or "...").replace('\n', '<br/>'), body_style))
     story.append(Spacer(1, 10*mm))
-    
-    footer_style = ParagraphStyle(
-        'Footer',
-        parent=styles['Normal'],
-        fontSize=12,
-        textColor=HexColor('#2D5A4A'),
-        alignment=TA_CENTER
-    )
-    story.append(Paragraph("Merci de votre lecture ! À très bientôt.", footer_style))
+    story.append(Paragraph("Merci de votre lecture !", ParagraphStyle('Footer', parent=styles['Normal'], fontSize=12, textColor=HexColor('#2D5A4A'), alignment=TA_CENTER)))
     
     doc.build(story)
     buffer.seek(0)
     return buffer
 
-# === INTERFACE PRINCIPALE ===
+# Interface
+st.title("Gazette EHPAD")
+st.caption("Createur de gazette mensuelle avec IA")
 
-# Header
-st.title("📰 Gazette EHPAD")
-st.caption("Créateur de gazette mensuelle pour votre établissement")
-
-st.divider()
-
-# Sidebar - Configuration
+# Sidebar
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.header("Configuration")
+    api_key = st.text_input("Cle API Google Gemini", type="password", help="Obtenez-la sur aistudio.google.com")
     
-    api_key_input = st.text_input(
-        "Clé API Anthropic",
-        type="password",
-        value=st.session_state.api_key,
-        help="Obtenez votre clé sur console.anthropic.com"
-    )
-    if api_key_input:
-        st.session_state.api_key = api_key_input
-        st.success("✅ Clé API configurée")
+    if api_key:
+        st.success("Cle configuree")
     
     st.divider()
     
-    st.header("📋 Navigation")
-    page = st.radio(
-        "Choisir une section",
-        ["1 - Couverture et Éditorial", "2 - Activités", "3 - Planning et Actualités", "4 - Chronique Mémoire", "5 - Aperçu et Export"],
-        label_visibility="collapsed"
-    )
+    page = st.radio("Section", ["Couverture", "Activites", "Planning", "Memoire", "Apercu"])
     
     st.divider()
     
-    st.header("💾 Export PDF")
-    if st.button("📄 Générer le PDF", use_container_width=True):
-        with st.spinner("Génération du PDF..."):
-            try:
-                pdf_buffer = create_pdf()
-                st.download_button(
-                    label="⬇️ Télécharger le PDF",
-                    data=pdf_buffer,
-                    file_name=f"gazette-{st.session_state.gazette_data['mois'].replace(' ', '-')}.pdf",
-                    mime="application/pdf",
-                    use_container_width=True
-                )
-            except Exception as e:
-                st.error(f"Erreur PDF : {str(e)}")
+    if st.button("Telecharger PDF"):
+        pdf = create_pdf(st.session_state.data)
+        st.download_button("Cliquez pour telecharger", pdf, "gazette.pdf", "application/pdf")
 
-# Contenu principal selon la page sélectionnée
-data = st.session_state.gazette_data
+data = st.session_state.data
 
-if "Couverture" in page:
-    st.header("1️⃣ Couverture & Éditorial")
+if page == "Couverture":
+    st.header("Page 1 : Couverture")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        data['etablissement'] = st.text_input(
-            "🏠 Nom de l'établissement",
-            value=data['etablissement'],
-            placeholder="Ex: Résidence Les Jardins de Marie"
-        )
-    with col2:
-        data['mois'] = st.text_input(
-            "📅 Mois de la gazette",
-            value=data['mois'],
-            placeholder="Ex: Novembre 2024"
-        )
+    data['etablissement'] = st.text_input("Nom etablissement", value=data['etablissement'])
+    data['mois'] = st.text_input("Mois", value=data['mois'])
     
-    st.subheader("📷 Photos de couverture")
-    uploaded_cover = st.file_uploader(
-        "Ajouter des photos",
-        type=['png', 'jpg', 'jpeg'],
-        accept_multiple_files=True,
-        key="cover_upload"
-    )
-    if uploaded_cover:
-        data['cover_photos'] = [f.read() for f in uploaded_cover]
-        st.success(f"✅ {len(uploaded_cover)} photo(s) ajoutée(s)")
-        cols = st.columns(min(len(uploaded_cover), 4))
-        for i, photo in enumerate(uploaded_cover):
-            photo.seek(0)
-            with cols[i % 4]:
-                st.image(photo, use_container_width=True)
+    st.subheader("Editorial")
+    data['edito_prompt'] = st.text_area("Decrivez ce que vous voulez", value=data['edito_prompt'], height=80, key="ep")
     
-    st.subheader("✍️ Éditorial")
-    data['edito_prompt'] = st.text_area(
-        "Instructions pour la génération",
-        value=data['edito_prompt'],
-        placeholder="Ex: Parler de l'arrivée de l'automne, remercier l'équipe soignante, annoncer les fêtes de fin d'année...",
-        height=100
-    )
+    if st.button("Generer editorial") and api_key and data['edito_prompt']:
+        with st.spinner("Generation..."):
+            data['edito_text'] = generate_text(data['edito_prompt'], "Editorial accueil", data['etablissement'], data['mois'], api_key)
     
-    if st.button("✨ Générer l'éditorial", key="gen_edito", disabled=not st.session_state.api_key or not data['edito_prompt']):
-        with st.spinner("Génération en cours..."):
-            result = generate_text(
-                data['edito_prompt'],
-                "Éditorial de la gazette - texte d'accueil chaleureux",
-                data['etablissement'],
-                data['mois']
-            )
-            if result:
-                data['edito_text'] = result
-                st.rerun()
-    
-    data['edito_text'] = st.text_area(
-        "Texte de l'éditorial (modifiable)",
-        value=data['edito_text'],
-        height=200,
-        key="edito_text_area"
-    )
+    data['edito_text'] = st.text_area("Texte editorial", value=data['edito_text'], height=200, key="et")
 
-elif "Activités" in page:
-    st.header("2️⃣ Activités du Mois")
+elif page == "Activites":
+    st.header("Page 2 : Activites")
     
-    st.subheader("📷 Photos des activités")
-    uploaded_activites = st.file_uploader(
-        "Ajouter des photos",
-        type=['png', 'jpg', 'jpeg'],
-        accept_multiple_files=True,
-        key="activites_upload"
-    )
-    if uploaded_activites:
-        data['activites_photos'] = [f.read() for f in uploaded_activites]
-        st.success(f"✅ {len(uploaded_activites)} photo(s) ajoutée(s)")
-        cols = st.columns(min(len(uploaded_activites), 4))
-        for i, photo in enumerate(uploaded_activites):
-            photo.seek(0)
-            with cols[i % 4]:
-                st.image(photo, use_container_width=True)
+    data['activites_prompt'] = st.text_area("Decrivez les activites du mois", value=data['activites_prompt'], height=80, key="ap")
     
-    st.subheader("✍️ Récapitulatif des activités")
-    data['activites_prompt'] = st.text_area(
-        "Instructions pour la génération",
-        value=data['activites_prompt'],
-        placeholder="Ex: Ce mois-ci nous avons fait un atelier pâtisserie (tarte aux pommes), de la gym douce tous les lundis, une sortie au marché...",
-        height=100
-    )
+    if st.button("Generer activites") and api_key and data['activites_prompt']:
+        with st.spinner("Generation..."):
+            data['activites_text'] = generate_text(data['activites_prompt'], "Recapitulatif activites", data['etablissement'], data['mois'], api_key)
     
-    if st.button("✨ Générer le récapitulatif", key="gen_activites", disabled=not st.session_state.api_key or not data['activites_prompt']):
-        with st.spinner("Génération en cours..."):
-            result = generate_text(
-                data['activites_prompt'],
-                "Récapitulatif des activités du mois - mettre en valeur les moments partagés",
-                data['etablissement'],
-                data['mois']
-            )
-            if result:
-                data['activites_text'] = result
-                st.rerun()
-    
-    data['activites_text'] = st.text_area(
-        "Texte des activités (modifiable)",
-        value=data['activites_text'],
-        height=200,
-        key="activites_text_area"
-    )
+    data['activites_text'] = st.text_area("Texte activites", value=data['activites_text'], height=200, key="at")
 
-elif "Planning" in page:
-    st.header("3️⃣ Planning & Actualités")
+elif page == "Planning":
+    st.header("Page 3 : Planning et Actualites")
     
-    st.subheader("📅 Planning du mois prochain")
-    data['planning_prompt'] = st.text_area(
-        "Instructions pour la génération",
-        value=data['planning_prompt'],
-        placeholder="Ex: Lundi: gym douce 10h, Mardi: atelier mémoire 14h, Mercredi: chorale 15h...",
-        height=100
-    )
+    st.subheader("Planning")
+    data['planning_prompt'] = st.text_area("Decrivez le planning", value=data['planning_prompt'], height=80, key="pp")
     
-    if st.button("✨ Générer le planning", key="gen_planning", disabled=not st.session_state.api_key or not data['planning_prompt']):
-        with st.spinner("Génération en cours..."):
-            result = generate_text(
-                data['planning_prompt'],
-                "Planning des activités du mois prochain",
-                data['etablissement'],
-                data['mois']
-            )
-            if result:
-                data['planning_text'] = result
-                st.rerun()
+    if st.button("Generer planning") and api_key and data['planning_prompt']:
+        with st.spinner("Generation..."):
+            data['planning_text'] = generate_text(data['planning_prompt'], "Planning mensuel", data['etablissement'], data['mois'], api_key)
     
-    data['planning_text'] = st.text_area(
-        "Texte du planning (modifiable)",
-        value=data['planning_text'],
-        height=150,
-        key="planning_text_area"
-    )
+    data['planning_text'] = st.text_area("Texte planning", value=data['planning_text'], height=150, key="pt")
+    
+    st.subheader("Actualites")
+    data['news_prompt'] = st.text_area("Decrivez les actualites", value=data['news_prompt'], height=80, key="np")
+    
+    if st.button("Generer actualites") and api_key and data['news_prompt']:
+        with st.spinner("Generation..."):
+            data['news_text'] = generate_text(data['news_prompt'], "Actualites etablissement", data['etablissement'], data['mois'], api_key)
+    
+    data['news_text'] = st.text_area("Texte actualites", value=data['news_text'], height=150, key="nt")
+
+elif page == "Memoire":
+    st.header("Page 4 : Chronique Memoire")
+    st.info("Cette section rend hommage aux residents qui nous ont quittes.")
+    
+    data['memoire_prompt'] = st.text_area("Decrivez les personnes a honorer", value=data['memoire_prompt'], height=80, key="mp")
+    
+    if st.button("Generer hommage") and api_key and data['memoire_prompt']:
+        with st.spinner("Generation..."):
+            data['memoire_text'] = generate_text(data['memoire_prompt'], "Hommage bienveillant aux residents disparus", data['etablissement'], data['mois'], api_key)
+    
+    data['memoire_text'] = st.text_area("Texte hommage", value=data['memoire_text'], height=200, key="mt")
+
+elif page == "Apercu":
+    st.header("Apercu de la Gazette")
+    
+    st.subheader(data['etablissement'] or "Notre EHPAD")
+    st.caption("La Gazette - " + data['mois'])
+    
+    st.write("**Editorial**")
+    st.write(data['edito_text'] or "...")
     
     st.divider()
     
-    st.subheader("📢 Actualités de l'établissement")
-    data['news_prompt'] = st.text_area(
-        "Instructions pour la génération",
-        value=data['news_prompt'],
-        placeholder="Ex: Nouvelle kinésithérapeute Mme Martin, travaux terminés au salon, anniversaires du mois...",
-        height=100
-    )
+    st.write("**Activites du Mois**")
+    st.write(data['activites_text'] or "...")
     
-    if st.button("✨ Générer les actualités", key="gen_news", disabled=not st.session_state.api_key or not data['news_prompt']):
-        with st.spinner("Génération en cours..."):
-            result = generate_text(
-                data['news_prompt'],
-                "Actualités générales de l'établissement - informations pratiques",
-                data['etablissement'],
-                data['mois']
-            )
-            if result:
-                data['news_text'] = result
-                st.rerun()
+    st.divider()
     
-    data['news_text'] = st.text_area(
-        "Texte des actualités (modifiable)",
-        value=data['news_text'],
-        height=150,
-        key="news_text_area"
-    )
+    st.write("**Planning**")
+    st.write(data['planning_text'] or "...")
+    
+    st.write("**Actualites**")
+    st.write(data['news_text'] or "...")
+    
+    st.divider()
+    
+    st.write("**Chronique Memoire**")
+    st.write(data['memoire_text'] or "...")
 
-elif "Mémoire" in page:
-    st.header("4️⃣ Chronique Mémoire")
-    
-    st.info("🕯️ Cette section rend hommage avec délicatesse aux résidents qui nous ont quittés.")
-    
-    st.subheader("📷 Photos souvenirs")
-    uploaded_memoire = st.file_uploader(
-        "Ajouter des photos",
-        type=['png', 'jpg', 'jpeg'],
-        accept_multiple_files=True,
-        key="memoire_upload"
-    )
-    if uploaded_memoire:
-        data['memoire_photos'] = [f.read() for f in uploaded_memoire]
-        st.success(f"✅ {len(uploaded_memoire)} photo(s) ajoutée(s)")
-        cols = st.columns(min(len(uploaded_memoire), 4))
-        for i, photo in enumerate(uploaded_memoire):
-            photo.seek(0)
-            with cols[i % 4]:
-                st.image(photo, use_container_width=True)
-    
-    st.subheader("✍️ Texte d'hommage")
-    data['memoire_prompt'] = st.text_area(
-        "Instructions pour la génération",
-        value=data['memoire_prompt'],
-        placeholder="Ex: Ce mois-ci, nous avons dit au revoir à M. Robert (aimait jardiner, ancien instituteur) et Mme Jeanne (passionnée de tricot)...",
-        height=100
-    )
-    
-    if st.button("✨ Générer l'hommage", key="gen_memoire", disabled=not st.session_state.api_key or not data['memoire_prompt']):
-        with st.spinner("Génération en cours..."):
-            result = generate_text(
-                data['memoire_prompt'],
-                "Chronique Mémoire - hommage subtil et bienveillant aux résidents qui nous ont quittés",
-                data['etablissement'],
-                data['mois']
-            )
-            if result:
-                data['memoire_text'] = result
-                st.rerun()
-    
-    data['memoire_text'] = st.text_area(
-        "Texte de la chronique (modifiable)",
-        value=data['memoire_text'],
-        height=200,
-        key="memoire_text_area"
-    )
-
-elif "Aperçu" in page:
-    st.header("👁️ Aperçu de la Gazette")
-    
-    # Page 1
-    st.subheader(f"📄 Page 1 : Couverture")
-    with st.container(border=True):
-        st.markdown(f"### {data['etablissement'] or 'Notre EHPAD'}")
-        st.caption(f"La Gazette — {data['mois']}")
-        if data['cover_photos']:
-            cols = st.columns(2)
-            for i, photo in enumerate(data['cover_photos'][:2]):
-                with cols[i]:
-                    st.image(photo, use_container_width=True)
-        st.markdown("#### Éditorial")
-        st.write(data['edito_text'] or "_Votre éditorial apparaîtra ici..._")
-    
-    # Page 2
-    st.subheader("📄 Page 2 : Activités")
-    with st.container(border=True):
-        st.markdown("#### Les Activités du Mois")
-        if data['activites_photos']:
-            cols = st.columns(4)
-            for i, photo in enumerate(data['activites_photos'][:4]):
-                with cols[i % 4]:
-                    st.image(photo, use_container_width=True)
-        st.write(data['activites_text'] or "_Le récapitulatif apparaîtra ici..._")
-    
-    # Page 3
-    st.subheader("📄 Page 3 : Planning & Actualités")
-    with st.container(border=True):
-        st.markdown("#### Planning du Mois")
-        st.write(data['planning_text'] or "_Le planning apparaîtra ici..._")
-        st.markdown("#### Actualités")
-        st.write(data['news_text'] or "_Les actualités apparaîtront ici..._")
-    
-    # Page 4
-    st.subheader("📄 Page 4 : Chronique Mémoire")
-    with st.container(border=True):
-        st.markdown("#### 🕯️ Chronique Mémoire")
-        if data['memoire_photos']:
-            cols = st.columns(2)
-            for i, photo in enumerate(data['memoire_photos'][:2]):
-                with cols[i]:
-                    st.image(photo, use_container_width=True)
-        st.write(f"_{data['memoire_text'] or 'La chronique mémoire apparaîtra ici...'}_")
-        
-        st.success("**Merci de votre lecture !** À très bientôt pour un nouveau numéro.")
-
-# Footer
 st.divider()
-st.caption("📰 Gazette EHPAD — Créé avec ❤️ pour faciliter la communication en EHPAD")
+st.caption("Gazette EHPAD - Gratuit avec Google Gemini")
